@@ -8,6 +8,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from youtube_transcript_api import YouTubeTranscriptApi
 import yt_dlp
+from dotenv import load_dotenv
+
+from ai_service import generate_summary
+from db_service import save_summary_to_db
+
+# Load environment variables
+load_dotenv()
 
 app = FastAPI()
 
@@ -154,7 +161,13 @@ def get_transcript(url: str):
 
     metadata = get_video_info(url)
     if not metadata:
-        raise HTTPException(status_code=400, detail="Could not fetch video metadata using yt-dlp.")
+        raise HTTPException(status_code=400, detail="Could not fetch video metadata.")
+
+    # Generate AI summary
+    summary = generate_summary(transcript)
+
+    # Save to database (placeholder)
+    save_summary_to_db(metadata["video_id"], summary)
 
     return {
         "status": "success",
@@ -163,6 +176,7 @@ def get_transcript(url: str):
         "title": metadata["title"],
         "channel_name": metadata["channel_name"],
         "transcript": transcript,
+        "summary": summary,
     }
 
 
