@@ -168,7 +168,6 @@ def get_transcript(url: str):
 
     summary = generate_summary(transcript)
 
-    # 🔥 FIX: Bundle all the data together before saving
     video_data = {
         "video_id": metadata["video_id"],
         "video_url": url,
@@ -197,10 +196,12 @@ def get_transcript_only(url: str):
     except HTTPException:
         return {"error": "Unable to fetch transcript"}
 
+# 🔥 CHANGED: Removed the hardcoded default URL! 
+# You MUST pass the channel_url when calling this endpoint now.
 @app.get("/force-check")
-def force_check_channel(channel_url: str = "https://www.youtube.com/@MoneyPechu"):
+def force_check_channel(channel_url: str):
     """
-    Manual trigger to check a channel for new videos and process them.
+    Manual trigger to check ANY channel for new videos and process them.
     """
     print(f"\n--- 🚀 Starting Manual Channel Check for: {channel_url} ---")
     
@@ -229,7 +230,6 @@ def force_check_channel(channel_url: str = "https://www.youtube.com/@MoneyPechu"
 
         summary = generate_summary(transcript)
         
-        # 🔥 FIX: Bundle all the data together before saving
         video_data = {
             "video_id": latest_video_id,
             "video_url": video_url,
@@ -240,10 +240,11 @@ def force_check_channel(channel_url: str = "https://www.youtube.com/@MoneyPechu"
         }
         save_summary_to_db(video_data)
 
-        # 🔥 NEW: Send the push notification!
+        # 🔥 CHANGED: Now broadcasting to the Firebase Topic!
         send_new_video_notification(
             title=metadata["title"], 
-            channel_name=metadata["channel_name"]
+            channel_name=metadata["channel_name"],
+            video_id=latest_video_id
         )
         
         print(f"✅ Successfully processed and saved new video: {metadata['title']}")

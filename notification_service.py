@@ -18,27 +18,35 @@ else:
     cred = credentials.Certificate(cred_path)
     firebase_admin.initialize_app(cred)
 
-def send_new_video_notification(title: str, channel_name: str):
+def send_new_video_notification(title: str, channel_name: str, video_id: str):
     """
-    Sends a push notification to your specific device.
+    Broadcasts a push notification to all users subscribed to the channel's topic.
     """
-    # ... (Keep the rest of your function exactly the same) ...
-    # Your hardcoded Flutter device token for testing!
-    my_phone_token = "fww1pO-gRi27MLhO_vupYj:APA91bFzl0_QpRTm2P9Xd_YATPRvuNpntauLp20Xo9qVgLg4xywxdysNvUjMwMGu-k5wcIoBRv10swimLsg8CV4xoshj1SHVE1k4wgfa2Al--lCQx-tTrX8"
+    # 1. Format the topic name EXACTLY how Flutter formatted it!
+    # Flutter did: 'channel_${channelName.replaceAll(' ', '')}'
+    safe_topic_name = f"channel_{channel_name.replace(' ', '')}"
     
     try:
+        # 2. Build the Message using 'topic=' instead of 'token='
         message = messaging.Message(
             notification=messaging.Notification(
-                title=f"New Video: {channel_name} 🚀",
+                title=f"🔥 New Video: {channel_name}",
                 body=f"Summary ready for: {title}",
             ),
-            token=my_phone_token,
+            data={
+                "video_id": video_id,
+                "channel_name": channel_name,
+                "click_action": "FLUTTER_NOTIFICATION_CLICK" # Helps Flutter handle taps later
+            },
+            topic=safe_topic_name  # <-- THE MAGIC HAPPENS HERE
         )
 
+        # 3. Send the broadcast!
         response = messaging.send(message)
-        print(f"📲 Successfully sent notification to your phone! Firebase ID: {response}")
+        print(f"📲 Successfully broadcasted to topic '{safe_topic_name}'!")
+        print(f"Firebase Message ID: {response}")
         return True
     
     except Exception as e:
-        print(f"❌ Error sending notification: {e}")
+        print(f"❌ Error sending topic notification: {e}")
         return False

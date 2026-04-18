@@ -1,4 +1,11 @@
+# Environments
 .env
-firebase-credentials.json
 venv/
+env/
+
+# Python Cache
 __pycache__/
+*.pyc
+
+# Firebase Secrets - CRITICAL!
+firebase-credentials.json
