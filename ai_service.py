@@ -25,7 +25,7 @@ def generate_summary(transcript_text: str) -> str:
         
         # 3. Generate content using the new syntax
         response = client.models.generate_content(
-            model='gemini-1.5-flash',
+            model='gemini-flash-latest',
             contents=prompt,
         )
         return response.text.strip()
