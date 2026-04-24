@@ -1,4 +1,5 @@
 import os
+import re # 🔥 Added Regex library
 import firebase_admin
 from firebase_admin import credentials, messaging
 
@@ -22,9 +23,9 @@ def send_new_video_notification(title: str, channel_name: str, video_id: str):
     """
     Broadcasts a push notification to all users subscribed to the channel's topic.
     """
-    # 1. Format the topic name EXACTLY how Flutter formatted it!
-    # Flutter did: 'channel_${channelName.replaceAll(' ', '')}'
-    safe_topic_name = f"channel_{channel_name.replace(' ', '')}"
+    # 🔥 CRITICAL FIX: Make topic name exactly match Flutter (lowercase, no special chars)
+    clean_name = re.sub(r'[^a-zA-Z0-9]', '', channel_name).lower()
+    safe_topic_name = f"channel_{clean_name}"
     
     try:
         # 2. Build the Message using 'topic=' instead of 'token='
@@ -36,7 +37,7 @@ def send_new_video_notification(title: str, channel_name: str, video_id: str):
             data={
                 "video_id": video_id,
                 "channel_name": channel_name,
-                "click_action": "FLUTTER_NOTIFICATION_CLICK" # Helps Flutter handle taps later
+                "click_action": "FLUTTER_NOTIFICATION_CLICK" 
             },
             topic=safe_topic_name  # <-- THE MAGIC HAPPENS HERE
         )
