@@ -62,3 +62,52 @@ def check_if_video_exists(video_id: str) -> bool:
     except Exception as e:
         print(f"❌ Database check exception: {e}")
         return False
+
+def get_previous_summaries(channel_name: str, limit: int = 3):
+    """
+    Fetches the last N summaries for a specific channel from Supabase.
+    """
+    if not url or not key:
+        return []
+
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+    }
+    
+    # Query: filter by channel_name
+    endpoint = f"{url}/rest/v1/youtube_summaries?channel_name=eq.{channel_name}&select=title,summary&limit={limit}"
+    
+    try:
+        response = requests.get(endpoint, headers=headers)
+        if response.status_code == 200:
+            return response.json()
+        return []
+    except Exception as e:
+        print(f"❌ Error fetching previous summaries: {e}")
+        return []
+
+def get_latest_channel_summary(channel_name: str):
+    """
+    Retrieves the most recent channel_profile_summary for a creator 
+    from the existing youtube_summaries table.
+    """
+    if not url or not key:
+        return None
+
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {key}",
+    }
+    # Query for records where channel_profile_summary is not null, limited to 1
+    endpoint = f"{url}/rest/v1/youtube_summaries?channel_name=eq.{channel_name}&select=channel_profile_summary,channel_url&channel_profile_summary=not.is.null&limit=1"
+    
+    try:
+        response = requests.get(endpoint, headers=headers)
+        if response.status_code == 200:
+            data = response.json()
+            return data[0] if data else None
+        return None
+    except Exception as e:
+        print(f"❌ Error fetching channel context: {e}")
+        return None

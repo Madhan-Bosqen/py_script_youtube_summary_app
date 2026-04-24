@@ -11,16 +11,21 @@ import yt_dlp
 from dotenv import load_dotenv
 from notification_service import send_new_video_notification
 
-from ai_service import generate_summary
+from ai_service import generate_summary, generate_channel_profile_summary
 
 # Try to import the existence check 
 try:
-    from db_service import check_if_video_exists, save_summary_to_db
+    from db_service import (
+        check_if_video_exists, 
+        save_summary_to_db, 
+        get_previous_summaries,
+        get_latest_channel_summary
+    )
 except ImportError:
-    def check_if_video_exists(video_id: str) -> bool:
-        return False
-    def save_summary_to_db(video_data: dict):
-        pass
+    def check_if_video_exists(video_id: str) -> bool: return False
+    def save_summary_to_db(video_data: dict): pass
+    def get_previous_summaries(channel_name: str, limit: int = 3): return []
+    def get_latest_channel_summary(channel_name: str): return None
 
 # Load environment variables
 load_dotenv()
@@ -45,7 +50,7 @@ def get_video_info(url: str):
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
-        'extract_flat': "in_playlist", 
+        'extract_flat': False,
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
@@ -53,6 +58,8 @@ def get_video_info(url: str):
             return {
                 "title": info.get('title', 'Unknown Title'),
                 "channel_name": info.get('uploader', 'Unknown Channel'),
+                "channel_url": info.get('uploader_url'),
+                "channel_description": info.get('uploader_description') or info.get('description', '')[:500],
                 "video_id": info.get('id', extract_video_id(url))
             }
         except Exception:
@@ -160,19 +167,48 @@ def health_check():
 
 @app.get("/transcript")
 def get_transcript(url: str):
-    transcript = fetch_transcript(url)
     metadata = get_video_info(url)
-    
     if not metadata:
         raise HTTPException(status_code=400, detail="Could not fetch video metadata.")
 
-    summary = generate_summary(transcript)
+    channel_name = metadata["channel_name"]
+    channel_url = metadata.get("channel_url")
+    
+    # 1. Fetch previous summaries for context
+    prev_summaries = get_previous_summaries(channel_name, limit=3)
+    
+    # 2. Check if we already have a channel summary
+    channel_info = get_latest_channel_summary(channel_name)
+    channel_profile_summary = None
+    if channel_info:
+        channel_profile_summary = channel_info.get('channel_profile_summary')
+
+    # 3. Fetch transcript
+    transcript = fetch_transcript(url)
+
+    # 4. Generate context-aware summary
+    channel_context = {
+        "name": channel_name,
+        "description": metadata.get("channel_description", "")
+    }
+    summary = generate_summary(transcript, channel_context=channel_context, previous_summaries=prev_summaries)
+
+    # 5. If channel summary is missing, generate it now
+    if not channel_profile_summary:
+        print(f"✨ Generating new creator persona for {channel_name}...")
+        channel_profile_summary = generate_channel_profile_summary(
+            channel_name, 
+            metadata.get("channel_description", ""), 
+            prev_summaries + [{"title": metadata["title"], "summary": summary}]
+        )
 
     video_data = {
         "video_id": metadata["video_id"],
         "video_url": url,
         "title": metadata["title"],
-        "channel_name": metadata["channel_name"],
+        "channel_name": channel_name,
+        "channel_url": channel_url,
+        "channel_profile_summary": channel_profile_summary,
         "transcript": transcript,
         "summary": summary
     }
@@ -183,9 +219,33 @@ def get_transcript(url: str):
         "video_id": metadata["video_id"],
         "video_url": url,
         "title": metadata["title"],
-        "channel_name": metadata["channel_name"],
+        "channel_name": channel_name,
+        "channel_url": channel_url,
+        "channel_profile_summary": channel_profile_summary,
+        "previous_summaries": [s.get('summary', '') for s in prev_summaries],
         "transcript": transcript,
         "summary": summary,
+    }
+
+@app.get("/channel-profile")
+def get_channel_profile_endpoint(channel_name: str):
+    """
+    Fetches the latest profile and history for a channel from the database.
+    """
+    channel_info = get_latest_channel_summary(channel_name)
+    prev_summaries = get_previous_summaries(channel_name, limit=3)
+    
+    if not channel_info and not prev_summaries:
+        return {"status": "error", "message": "No data found for this channel."}
+
+    return {
+        "status": "success",
+        "data": {
+            "channel_name": channel_name,
+            "channel_url": channel_info.get('channel_url') if channel_info else None,
+            "profile_summary": channel_info.get('channel_profile_summary') if channel_info else "No profile generated yet.",
+            "last_3_summaries": prev_summaries
+        }
     }
 
 @app.get("/transcript-only")
@@ -196,8 +256,6 @@ def get_transcript_only(url: str):
     except HTTPException:
         return {"error": "Unable to fetch transcript"}
 
-# 🔥 CHANGED: Removed the hardcoded default URL! 
-# You MUST pass the channel_url when calling this endpoint now.
 @app.get("/force-check")
 def force_check_channel(channel_url: str):
     """
@@ -228,26 +286,33 @@ def force_check_channel(channel_url: str):
         if not metadata:
              return {"status": "error", "message": "Failed to get video metadata."}
 
-        summary = generate_summary(transcript)
+        channel_name = metadata["channel_name"]
+        prev_summaries = get_previous_summaries(channel_name, limit=3)
+        channel_info = get_latest_channel_summary(channel_name)
+        channel_profile_summary = channel_info.get('channel_profile_summary') if channel_info else None
+
+        summary = generate_summary(transcript, channel_context={"name": channel_name, "description": metadata.get("channel_description", "")}, previous_summaries=prev_summaries)
         
+        if not channel_profile_summary:
+            channel_profile_summary = generate_channel_profile_summary(channel_name, metadata.get("channel_description", ""), prev_summaries + [{"title": metadata["title"], "summary": summary}])
+
         video_data = {
             "video_id": latest_video_id,
             "video_url": video_url,
             "title": metadata["title"],
-            "channel_name": metadata["channel_name"],
+            "channel_name": channel_name,
+            "channel_url": metadata.get("channel_url"),
+            "channel_profile_summary": channel_profile_summary,
             "transcript": transcript,
             "summary": summary
         }
         save_summary_to_db(video_data)
 
-        # 🔥 CHANGED: Now broadcasting to the Firebase Topic!
         send_new_video_notification(
             title=metadata["title"], 
             channel_name=metadata["channel_name"],
             video_id=latest_video_id
         )
-        
-        print(f"✅ Successfully processed and saved new video: {metadata['title']}")
         
         return {
             "status": "success", 
